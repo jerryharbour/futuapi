@@ -1,4 +1,5 @@
 syntax = "proto2";
+option go_package="./;Trd_Common";
 package Trd_Common;
 
 import "Common/Common.proto";
@@ -18,6 +19,11 @@ enum TrdMarket
 	TrdMarket_US = 2; //美国市场
 	TrdMarket_CN = 3; //大陆市场
 	TrdMarket_HKCC = 4; //香港A股通市场
+	TrdMarket_Futures = 5; //期货市场（环球期货）
+    TrdMarket_Futures_Simulate_HK = 10; //香港期货模拟市场
+    TrdMarket_Futures_Simulate_US = 11; //美国期货模拟市场
+    TrdMarket_Futures_Simulate_SG = 12; //新加坡期货模拟市场
+    TrdMarket_Futures_Simulate_JP = 13; //日本期货模拟市场
 }
 
 //可交易证券所属市场，目前主要是区分A股的沪市和深市，香港和美国暂不需要细分
@@ -28,6 +34,8 @@ enum TrdSecMarket
 	TrdSecMarket_US = 2; //美国的(正股、期权等)
 	TrdSecMarket_CN_SH = 31; //沪市的(正股)
 	TrdSecMarket_CN_SZ = 32; //深市的(正股)
+	TrdSecMarket_SG = 41;  //新加坡市场（期货）  
+    TrdSecMarket_JP = 51;  //日本市场（期货）  
 }
 
 //交易方向
@@ -41,6 +49,16 @@ enum TrdSide
 	TrdSide_BuyBack = 4; //买回
 }
 
+// 账户所属券商
+enum TrdSecurityFirm
+{
+	TrdSecurityFirm_NONE = 0; // 未知
+	TrdSecurityFirm_FUTUSECURITIES = 1; //富途证券（香港）
+	TrdSecurityFirm_FUTUINC = 2; //富途证券（美国）
+	TrdSecurityFirm_FUTUSG = 3; //富途证券（新加坡）
+	TrdSecurityFirm_FUTUAU = 4; //富途证券（澳大利亚）
+}
+
 //订单类型
 enum OrderType
 {
@@ -52,6 +70,17 @@ enum OrderType
 	OrderType_Auction = 6; //竞价订单(目前仅港股)，A股的早盘竞价订单类型不变还是OrderType_Normal
 	OrderType_AuctionLimit = 7; //竞价限价订单(目前仅港股)
 	OrderType_SpecialLimit = 8; //特别限价订单(目前仅港股)，成交规则同增强限价订单，且部分成交后，交易所自动撤销订单
+	OrderType_SpecialLimit_All = 9; //特别限价且要求全部成交订单（仅港股）。全部成交，否则自动撤单
+    OrderType_Stop = 10; // 止损市价单
+    OrderType_StopLimit = 11; // 止损限价单
+    OrderType_MarketifTouched = 12; // 触及市价单（止盈）
+    OrderType_LimitifTouched = 13; // 触及限价单（止盈）
+    OrderType_TrailingStop = 14; // 跟踪止损市价单
+    OrderType_TrailingStopLimit = 15; // 跟踪止损限价单
+    OrderType_TWAP  = 16; // 时间加权市价算法单（仅美股）
+    OrderType_TWAP_LIMIT = 17; // 时间加权限价算法单 (港股和美股）
+    OrderType_VWAP  = 18; // 成交量加权市价算法单（仅美股）
+    OrderType_VWAP_LIMIT  = 19; // 成交量加权限价算法单 (港股和美股）
 }
 
 //订单状态
@@ -73,6 +102,7 @@ enum OrderStatus
 	OrderStatus_Failed = 21; //下单失败，服务拒绝
 	OrderStatus_Disabled = 22; //已失效
 	OrderStatus_Deleted = 23; //已删除，无成交的订单才能删除
+	OrderStatus_FillCancelled = 24; //成交被撤销（一般遇不到，意思是已经成交的订单被回滚撤销，成交无效变为废单）
 };
 
 //持仓方向类型
@@ -111,6 +141,14 @@ message TrdHeader
 	required int32 trdMarket = 3; //交易市场, 参见TrdMarket的枚举定义
 }
 
+// 账户现金信息
+message AccCashInfo
+{
+    optional int32 currency = 1;        // 货币类型，取值参考 Currency
+    optional double cash = 2;           // 现金结余
+    optional double availableBalance = 3;   // 现金可提金额
+}
+
 //交易业务账户结构
 message TrdAcc
 {
@@ -118,6 +156,10 @@ message TrdAcc
 	required uint64 accID = 2; //业务账号
 	repeated int32 trdMarketAuthList = 3; //业务账户支持的交易市场权限，即此账户能交易那些市场, 可拥有多个交易市场权限，目前仅单个，取值参见TrdMarket的枚举定义
 	//后续根据需要再添加其他属性
+	optional int32 accType = 4;   //账户类型，取值见 TrdAccType
+  	optional string cardNum = 5;  //卡号
+  	optional int32 securityFirm = 6; //所属券商，取值见SecurityFirm
+  	optional int32 simAccType = 7; //模拟交易账号类型，取值见SimAccType
 }
 
 //账户资金结构
@@ -130,6 +172,30 @@ message Funds
 	required double frozenCash = 5; //冻结金额
 	required double debtCash = 6; //欠款金额
 	required double avlWithdrawalCash = 7; //可提金额
+
+	optional int32 currency = 8;            //币种，本结构体资金相关的货币类型，取值参见 Currency，期货和综合证券账户适用
+    optional double availableFunds = 9;     //可用资金，期货适用
+    optional double unrealizedPL = 10;      //未实现盈亏，期货适用
+    optional double realizedPL = 11;        //已实现盈亏，期货适用
+    optional int32 riskLevel = 12;           //风控状态，参见 CltRiskLevel, 期货适用。建议统一使用 riskStatus 字段获取证券、期货账户的风险状态
+    optional double initialMargin = 13;      //初始保证金
+    optional double maintenanceMargin = 14;  //维持保证金
+    repeated AccCashInfo cashInfoList = 15;  //分币种的现金信息，期货适用
+    optional double maxPowerShort = 16; //卖空购买力（此字段是按照 60% 的融券保证金率计算得到的近似值。但事实上，每个标的的融券保证金率并不相同。我们建议您使用 查询最大可买可卖 接口返回的 可卖空 字段，来判断实际可卖空的最大数量。）
+    optional double netCashPower = 17;  //现金购买力
+    optional double longMv = 18;        //多头市值
+    optional double shortMv = 19;       //空头市值
+    optional double pendingAsset = 20;  //在途资产
+    optional double maxWithdrawal = 21;          //融资可提，仅证券账户适用
+    optional int32 riskStatus = 22;              //风险状态，参见 CltRiskStatus，共分 9 个等级，LEVEL1是最安全，LEVEL9是最危险
+    optional double marginCallMargin = 23;       //	Margin Call 保证金
+
+    optional bool isPdt = 24;				//是否PDT账户，仅富途证券（美国）账户适用
+    optional string pdtSeq = 25;			//剩余日内交易次数，仅被标记为 PDT 的富途证券（美国）账户适用
+    optional double beginningDTBP = 26;		//初始日内交易购买力，仅被标记为 PDT 的富途证券（美国）账户适用
+    optional double remainingDTBP = 27;		//剩余日内交易购买力，仅被标记为 PDT 的富途证券（美国）账户适用
+    optional double dtCallAmount = 28;		//日内交易待缴金额，仅被标记为 PDT 的富途证券（美国）账户适用
+    optional int32 dtStatus = 29;				//日内交易限制情况，取值见 DTStatus。仅被标记为 PDT 的富途证券（美国）账户适用
 }
 
 //账户持仓结构
@@ -154,6 +220,11 @@ message Position
 	optional double td_buyQty = 24; //今日买入总量
 	optional double td_sellVal = 25; //今日卖出总额
 	optional double td_sellQty = 26; //今日卖出总量
+
+    optional double unrealizedPL = 28;       //未实现盈亏（仅期货账户适用）
+    optional double realizedPL = 29;         //已实现盈亏（仅期货账户适用）	
+    optional int32 currency = 30;        // 货币类型，取值参考 Currency
+    optional int32 trdMarket = 31;  //交易市场, 参见 TrdMarket 的枚举定义
 }
 
 //订单结构
@@ -174,6 +245,15 @@ message Order
 	optional double fillAvgPrice = 13; //成交均价，无精度限制
 	optional string lastErrMsg = 14; //最后的错误描述，如果有错误，会有此描述最后一次错误的原因，无错误为空
 	optional int32 secMarket = 15; //（2018/07/17新增）证券所属市场，参见TrdSecMarket的枚举定义
+	optional double createTimestamp = 16; //创建时间戳
+    optional double updateTimestamp = 17; //最后更新时间戳
+    optional string remark = 18; //用户备注字符串，最大长度64字节
+    optional double auxPrice = 21; //触发价格
+    optional int32 trailType = 22; //跟踪类型, 参见Trd_Common.TrailType的枚举定义
+    optional double trailValue = 23; //跟踪金额/百分比
+    optional double trailSpread = 24; //指定价差
+    optional int32 currency = 25;        // 货币类型，取值参考 Currency
+    optional int32 trdMarket = 26;  //交易市场, 参见TrdMarket的枚举定义
 }
 
 //成交结构
@@ -192,6 +272,9 @@ message OrderFill
 	optional int32 counterBrokerID = 11; //对手经纪号，港股有效
 	optional string counterBrokerName = 12; //对手经纪名称，港股有效
 	optional int32 secMarket = 13; //（2018/07/17新增）证券所属市场，参见TrdSecMarket的枚举定义
+	optional double createTimestamp = 14; //创建时间戳
+    optional double updateTimestamp = 15; //最后更新时间戳
+    optional int32 status = 16; //成交状态, 参见 OrderFillStatus 的枚举定义
 }
 
 //最大可交易数量
@@ -203,6 +286,8 @@ message MaxTrdQtys
 	required double maxPositionSell = 3; //不使用融券(卖空)，仅自己的持仓最大可卖整手股数
 	optional double maxSellShort = 4; //使用融券(卖空)，最大可卖空整手股数，不包括多仓
 	optional double maxBuyBack = 5; //卖空后，需要买回的最大整手股数。因为卖空后，必须先买回已卖空的股数，还掉股票，才能再继续买多。
+	optional double longRequiredIM = 6;         //开多仓每张合约初始保证金。当前仅期货和期权适用（最低 OpenD 版本要求：5.0.1310）
+    optional double shortRequiredIM = 7;        //开空仓每张合约初始保证金。当前仅期货和期权适用（最低 OpenD 版本要求：5.0.1310）
 }
 
 //过滤条件，条件组合是"与"不是"或"，用于获取订单、成交、持仓等时二次过滤

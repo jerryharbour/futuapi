@@ -1,4 +1,5 @@
 syntax = "proto2";
+option go_package="futugg/pb/Common/;Common";
 package Common;
 
 //返回结果
